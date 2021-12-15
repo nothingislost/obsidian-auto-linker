@@ -1,4 +1,4 @@
-import { Plugin, MetadataCache } from "obsidian";
+import { Plugin, MetadataCache, debounce } from "obsidian";
 import { around } from "monkey-around";
 
 declare module "obsidian" {
@@ -16,7 +16,6 @@ export default class ObsidianAutoLinkerPlugin extends Plugin {
   async onload() {
     const plugin = this;
     this.aliasCache = [];
-
     this.patchMDCacheUninstaller = around(MetadataCache.prototype, {
       // Here we patch the logic of getFirstLinkpathDest to resolve aliases
       //   and treat them with top priority
@@ -62,21 +61,21 @@ export default class ObsidianAutoLinkerPlugin extends Plugin {
   getFileByAlias(alias: string) {
     // populate an emphemeral alias cache so that we don't slow this method down horribly
     // the cache lives for 2 seconds before being cleared
-    this.populatAliasCache();
+    this.populateAliasCache();
     return this.aliasCache.find(a => a.alias?.toLowerCase() === alias.toLowerCase());
   }
 
-  clearAliasCache() {
-    setTimeout(() => {
+  clearAliasCache = debounce(() => {
       this.aliasCache = [];
-    }, 2000);
-  }
+  }, 2000, true)
 
-  populatAliasCache() {
+  populateAliasCache() {
     // on a vault of ~3k files, this takes around 3ms to populate
     if (!this.aliasCache.length) {
       this.aliasCache = this.app.metadataCache.getLinkSuggestions().filter(file => file.alias);
-      this.clearAliasCache();
     }
+    // Call this every time so that we keep resetting the debounced cache reset timer
+    // This means the cache will only reset after 2 seconds of getFirstLinkpathDest call inactivity
+    this.clearAliasCache();
   }
 }
