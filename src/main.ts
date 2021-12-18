@@ -1,11 +1,18 @@
-import { Plugin, MetadataCache, debounce } from "obsidian";
+import { Plugin, MetadataCache, CachedMetadata, debounce, TFile } from "obsidian";
 import { around } from "monkey-around";
 
 declare module "obsidian" {
   interface MetadataCache {
     initialized: boolean;
     initialize(): void;
+    fileCache: { [filePath: string]: { hash: string; mtime: number; size: number } };
+    uniqueFileLookup: { data: { [baseName: string]: TFile[] }; add(key: string, value: TFile): void };
+    metadataCache: { [hash: string]: CachedMetadata };
+    linkResolverQueue: { add(file: TFile): void };
     getLinkSuggestions(): any[];
+  }
+  interface CachedMetadataCollection {
+    hash: string;
   }
 }
 
@@ -43,20 +50,44 @@ export default class ObsidianAutoLinkerPlugin extends Plugin {
     });
     this.register(this.patchMDCacheUninstaller);
 
-    // If the cache has already been inialized, that most likely means
-    //    that it was loaded before we were able to patch.
-    // Rerun init so that the cache gets updated.
     if (this.app.metadataCache.initialized) {
-      // This call is overkill but it reloads the unresolved and resolved caches
-      // the call is async and takes around 200ms on a ~3k file vault
-      this.app.metadataCache.initialize();
+      this.refreshLinkResolverCache();
+    } else {
+      // If not initialized, we're still in the startup phase
+      // We don't need to force a refresh because we managed to patch 
+      //    before the link resolver could kick in
     }
   }
 
-  async onunload() {
+  onunload(): void {
     this.patchMDCacheUninstaller();
-    this.app.metadataCache.initialize();
+    this.refreshLinkResolverCache();
   }
+
+  refreshLinkResolverCache = () => {
+    // This will force a refresh of the link resolver cache
+    // Logic was borrowed from the default Obsidian MetadataCache.initialize() method
+    const cache = this.app.metadataCache;
+    const metadataCache = cache.metadataCache;
+    const fileCache = cache.fileCache;
+    let markdownFiles: { [path: string]: TFile } = {};
+    let allLoadedFiles = this.app.vault.getAllLoadedFiles();
+
+    for (let file of allLoadedFiles) {
+      if (file instanceof TFile) {
+        cache.uniqueFileLookup.add(file.name.toLowerCase(), file);
+        markdownFiles[file.path] = file;
+      }
+    }
+
+    for (let filePath in fileCache) {
+      const markdownFile = markdownFiles[filePath];
+      const cacheEntry = fileCache[filePath];
+      if (markdownFile && metadataCache.hasOwnProperty(cacheEntry.hash)) {
+        cache.linkResolverQueue.add(markdownFile);
+      }
+    }
+  };
 
   getFileByAlias(alias: string) {
     // populate an emphemeral alias cache so that we don't slow this method down horribly
@@ -65,9 +96,13 @@ export default class ObsidianAutoLinkerPlugin extends Plugin {
     return this.aliasCache.find(a => a.alias?.toLowerCase() === alias.toLowerCase());
   }
 
-  clearAliasCache = debounce(() => {
+  clearAliasCache = debounce(
+    () => {
       this.aliasCache = [];
-  }, 2000, true)
+    },
+    2000,
+    true
+  );
 
   populateAliasCache() {
     // on a vault of ~3k files, this takes around 3ms to populate

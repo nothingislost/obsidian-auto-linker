@@ -8,9 +8,10 @@ The logic will pick the closest and first document with a matching alias. If you
 
 If you have an actual file with the same name as one of your aliases, the actual file will always be preferred. In the future, there may be an option to always prefer aliases.
 
-If you notice any weirdness with link resolution or the graph view, just disable this plugin and everything will revert back to the default resolution logic.
+If you notice any weirdness with indexing, link resolution or the graph view, disable this plugin and everything will revert back to the default resolution logic.
 
 ### Components that now support bare aliases
+
 - Graph view
 - Backlinks
 - Embeds

@@ -1,7 +1,7 @@
 {
   "id": "obsidian-auto-linker",
   "name": "Auto Linker",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "minAppVersion": "0.12.5",
   "description": "An experimental Obsidian plugin that resolves bare alias links",
   "author": "NothingIsLost",
